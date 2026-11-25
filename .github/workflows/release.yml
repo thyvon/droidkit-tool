@@ -1,0 +1,84 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: pip install -e ".[dev]"
+      - name: Lint
+        run: |
+          ruff check src tests
+          ruff format --check src tests
+      - name: Typecheck
+        run: mypy src
+      - name: Tests
+        run: pytest -q
+
+  build-windows:
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: pip install -e ".[dev]"
+      - name: Fetch platform-tools (adb bundle)
+        run: python scripts/fetch_platform_tools.py --os windows --out platform-tools
+      - name: PyInstaller
+        run: |
+          pyinstaller --noconfirm --clean --windowed `
+            --name DroidKit `
+            --collect-all PySide6 `
+            --collect-all droidkit `
+            --paths src `
+            --add-data "platform-tools;platform-tools" `
+            src\droidkit\app.py
+      - name: Install Inno Setup
+        run: choco install innosetup -y --no-progress
+      - name: Installer
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path pyproject.toml -Pattern 'version = "(.+)"').Matches[0].Groups[1].Value
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" `
+            "/DMyAppVersion=$version" `
+            "/DMyAppExeDir=$PWD\dist\DroidKit" `
+            installer\droidkit.iss
+      - name: Zip (portable fallback)
+        run: Compress-Archive -Path dist\DroidKit\* -DestinationPath dist\DroidKit-windows-x64.zip -Force
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DroidKit-windows-x64
+          path: |
+            dist/*.zip
+            dist/DroidKit-Setup-*.exe
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build-windows
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: DroidKit-windows-x64
+          path: dist
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.zip
+            dist/*.exe
+          generate_release_notes: true
