@@ -10,6 +10,7 @@ from PySide6.QtCore import QCoreApplication, QEvent, QTimer, QUrl
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtQml import QQmlApplicationEngine
 
+import droidkit
 from droidkit import __app_name__, __version__
 from droidkit.i18n import Translator
 from droidkit.licensing.api import LicenseApi
@@ -19,7 +20,9 @@ from droidkit.update.api import UpdateApi
 
 
 def _qml_dir() -> Path:
-    return Path(__file__).resolve().parent / "ui" / "qml"
+    # Resolve via the package — works in dev AND inside a PyInstaller bundle
+    # (where the entry script's __file__ is not next to the package data).
+    return Path(droidkit.__file__).resolve().parent / "ui" / "qml"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -75,3 +78,7 @@ def main(argv: list[str] | None = None) -> int:
         obj.deleteLater()
     QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
     return code
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
