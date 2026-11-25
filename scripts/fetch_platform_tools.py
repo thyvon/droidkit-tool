@@ -43,6 +43,9 @@ def _default_os() -> str:
 
 
 def main() -> int:
+    # Windows consoles default to cp1252 — never let print() crash the build.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--os", choices=sorted(URLS), default=_default_os())
     p.add_argument("--out", type=Path, default=Path("platform-tools"))
@@ -73,7 +76,7 @@ def main() -> int:
             target.chmod(0o755 if name in {"adb", "fastboot"} else 0o644)
             print(f"  extracted {target}")
 
-    print(f"Done → {args.out}/")
+    print(f"Done -> {args.out}/")
     return 0
 
 
