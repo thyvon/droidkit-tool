@@ -125,6 +125,9 @@ class DeviceBridge(QObject):
         self._fb_devices: list[str] = []
         self._devices: list[dict[str, str]] = []
         self._logcat: _LogcatThread | None = None
+        # QRunnable has no parent QObject — the pool only holds a C++ pointer.
+        # Keep Python refs until the job finishes or shiboken frees it under us.
+        self._jobs: set[_Job] = set()
 
     # --- lazy tool accessors ---------------------------------------
 
@@ -214,12 +217,14 @@ class DeviceBridge(QObject):
 
     def _submit(self, fn: Callable[[], Any], on_ok: Callable[[Any], None]) -> None:
         job = _Job(fn)
+        self._jobs.add(job)
         job.signals.done.connect(on_ok)
         job.signals.failed.connect(self._set_error)
         self._set_busy(True)
         self._set_error("")
 
         def _finish(*_a: object) -> None:
+            self._jobs.discard(job)
             self._set_busy(False)
 
         job.signals.done.connect(_finish)
