@@ -63,7 +63,7 @@ Item {
                     }
                     Button {
                         text: Translator.tr("action.check_update")
-                        enabled: !UpdateApi.checking
+                        enabled: !UpdateApi.checking && !UpdateApi.downloading
                         onClicked: UpdateApi.check()
                     }
                 }
@@ -77,8 +77,34 @@ Item {
                     Layout.fillWidth: true
                 }
 
+                // One-click update: download installer, run it, restart
                 Button {
-                    visible: UpdateApi.updateAvailable
+                    visible: UpdateApi.updateAvailable && !UpdateApi.downloading
+                    text: Translator.tr("action.update_now") + " (v" + UpdateApi.latestVersion + ")"
+                    highlighted: true
+                    onClicked: UpdateApi.downloadUpdate()
+                }
+
+                RowLayout {
+                    visible: UpdateApi.downloading
+                    Layout.fillWidth: true
+                    spacing: 10
+                    ProgressBar {
+                        Layout.fillWidth: true
+                        from: 0
+                        to: 100
+                        value: UpdateApi.progress
+                    }
+                    Label {
+                        text: UpdateApi.progress + "%"
+                        color: "#94a3b8"
+                        font.pixelSize: 12
+                        Layout.preferredWidth: 40
+                    }
+                }
+
+                Button {
+                    visible: !UpdateApi.updateAvailable && UpdateApi.releaseUrl.length > 0
                     text: "Open release page"
                     onClicked: UpdateApi.openReleasePage()
                 }

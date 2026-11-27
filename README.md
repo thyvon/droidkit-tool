@@ -2,7 +2,7 @@
 
 Modern Android device toolkit built with **Python 3.12 + PySide6 (Qt Quick/QML)**.
 
-## Features (v0.2.0)
+## Features (v0.2.1)
 
 | Module | What it does |
 |---|---|
@@ -13,7 +13,7 @@ Modern Android device toolkit built with **Python 3.12 + PySide6 (Qt Quick/QML)*
 | **Fastboot** | Device list, reboot system/bootloader (flashing helpers later) |
 | **License** | HWID-bound offline license (`license.bin` activation) |
 | **Payments** | Bakong KHQR checkout (`bakong-khqr`, MIT) |
-| **Updates** | GitHub Releases auto-update check |
+| **Updates** | One-click in-app update — downloads the new installer and runs it |
 | **i18n** | English + Khmer |
 
 Built for **phone repair benches**: one installer, adb bundled, bloatware disable/enable,

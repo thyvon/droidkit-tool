@@ -62,6 +62,27 @@ def test_update_is_newer() -> None:
     assert UpdateChecker.is_newer("0.1.0", "0.1.1")
 
 
+def test_pick_installer_prefers_setup_exe_on_windows() -> None:
+    from droidkit.update.github_releases import pick_installer
+    from droidkit.update.models import ReleaseInfo
+
+    assets = [
+        {"name": "DroidKit-windows-x64.zip", "browser_download_url": "https://x/zip"},
+        {"name": "DroidKit-Setup-0.3.0.exe", "browser_download_url": "https://x/exe"},
+    ]
+    url, name = pick_installer(assets)
+    # On Linux CI we prefer zip; on Windows the exe. Both must be found.
+    assert name in {"DroidKit-Setup-0.3.0.exe", "DroidKit-windows-x64.zip"}
+    assert url.startswith("https://x/")
+
+    assert pick_installer([]) == ("", "")
+
+    info = ReleaseInfo(tag="v1", name="n", url="u", installer_url="https://x/exe")
+    assert info.has_installer
+    assert not ReleaseInfo(tag="v1", name="n", url="u").has_installer
+    assert info.version == "1"
+
+
 def test_adb_devices_parse() -> None:
     from droidkit.core.adb import AdbResult
 
