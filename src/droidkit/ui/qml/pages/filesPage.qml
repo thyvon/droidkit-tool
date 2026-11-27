@@ -10,6 +10,14 @@ Item {
 
     Component.onCompleted: DeviceBridge.refreshFiles("/sdcard")
 
+    FileDialog {
+        id: pushDialog
+        title: Translator.tr("action.push")
+        nameFilters: ["All files (*)"]
+        fileMode: Platform.FileDialog.OpenFile
+        onAccepted: DeviceBridge.pushFile(selectedFile.toString(), DeviceBridge.cwd)
+    }
+
     ColumnLayout {
         anchors.fill: parent
         spacing: 10
@@ -27,6 +35,11 @@ Item {
                 font.family: "Consolas, monospace"
                 elide: Text.ElideMiddle
                 Layout.fillWidth: true
+            }
+            Button {
+                text: Translator.tr("action.push")
+                enabled: DeviceBridge.serial.length > 0 && !DeviceBridge.busy
+                onClicked: pushDialog.open()
             }
             Button {
                 text: Translator.tr("action.refresh")

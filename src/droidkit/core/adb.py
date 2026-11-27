@@ -30,6 +30,9 @@ class AdbResult:
 
 
 class Adb:
+    #: Valid targets for `adb reboot <mode>` — what repair benches actually use.
+    REBOOT_MODES = ("", "bootloader", "recovery", "sideload", "fastboot")
+
     def __init__(self, tools: ToolPaths | None = None, timeout: float = 30.0) -> None:
         self._tools = tools or resolve_tools()
         self._timeout = timeout
@@ -37,6 +40,12 @@ class Adb:
     @property
     def path(self) -> Path:
         return self._tools.adb
+
+    def reboot(self, mode: str = "", *, serial: str | None = None) -> AdbResult:
+        if mode not in self.REBOOT_MODES:
+            raise AdbError(2, ["reboot", mode], f"unknown reboot mode: {mode!r}")
+        args = ["reboot", mode] if mode else ["reboot"]
+        return self.run(*args, serial=serial, timeout=15)
 
     def run(
         self,

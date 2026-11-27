@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import Qt.labs.platform as Platform
 
 Item {
     id: page
@@ -8,6 +9,14 @@ Item {
     property string title: Translator.tr("nav.apps")
 
     Component.onCompleted: DeviceBridge.refreshApps()
+
+    FileDialog {
+        id: apkDialog
+        title: Translator.tr("action.install")
+        nameFilters: ["APK files (*.apk)", "All files (*)"]
+        fileMode: Platform.FileDialog.OpenFile
+        onAccepted: DeviceBridge.installApk(selectedFile.toString())
+    }
 
     ColumnLayout {
         anchors.fill: parent
@@ -20,6 +29,11 @@ Item {
                 Layout.fillWidth: true
                 placeholderText: "Filter packages…"
                 onTextChanged: appList.model = filtered()
+            }
+            Button {
+                text: Translator.tr("action.install")
+                enabled: DeviceBridge.serial.length > 0 && !DeviceBridge.busy
+                onClicked: apkDialog.open()
             }
             Button {
                 text: Translator.tr("action.refresh")
@@ -66,12 +80,21 @@ Item {
                     ColumnLayout {
                         Layout.fillWidth: true
                         spacing: 2
-                        Label {
-                            text: modelData.package || modelData["package"] || ""
-                            color: "#e2e8f0"
-                            font.pixelSize: 13
-                            elide: Text.ElideMiddle
-                            Layout.fillWidth: true
+                        RowLayout {
+                            spacing: 6
+                            Label {
+                                text: modelData.package || modelData["package"] || ""
+                                color: "#e2e8f0"
+                                font.pixelSize: 13
+                                elide: Text.ElideMiddle
+                                Layout.fillWidth: true
+                            }
+                            Label {
+                                visible: (modelData.disabled || modelData["disabled"]) === "true"
+                                text: "disabled"
+                                color: "#fbbf24"
+                                font.pixelSize: 10
+                            }
                         }
                         Label {
                             visible: (modelData.system || modelData["system"]) === "true"
@@ -81,6 +104,27 @@ Item {
                         }
                     }
 
+                    Button {
+                        text: Translator.tr("action.backup")
+                        flat: true
+                        enabled: !DeviceBridge.busy
+                        onClicked: DeviceBridge.backupApp(modelData.package || modelData["package"])
+                    }
+                    Button {
+                        visible: (modelData.system || modelData["system"]) === "true"
+                                && (modelData.disabled || modelData["disabled"]) !== "true"
+                        text: Translator.tr("action.disable")
+                        flat: true
+                        enabled: !DeviceBridge.busy
+                        onClicked: DeviceBridge.disableApp(modelData.package || modelData["package"])
+                    }
+                    Button {
+                        visible: (modelData.disabled || modelData["disabled"]) === "true"
+                        text: Translator.tr("action.enable")
+                        flat: true
+                        enabled: !DeviceBridge.busy
+                        onClicked: DeviceBridge.enableApp(modelData.package || modelData["package"])
+                    }
                     Button {
                         text: Translator.tr("action.uninstall")
                         flat: true

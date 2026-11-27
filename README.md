@@ -2,19 +2,22 @@
 
 Modern Android device toolkit built with **Python 3.12 + PySide6 (Qt Quick/QML)**.
 
-## Features (MVP)
+## Features (v0.2.0)
 
 | Module | What it does |
 |---|---|
-| **Dashboard** | Device info, battery, storage, wireless ADB pair/connect |
-| **Apps** | List / backup / install / uninstall / disable packages |
-| **Shell** | Interactive shell, live Logcat, screenshots |
+| **Dashboard** | Device info, battery health/temp/voltage, storage, reboot to System/Bootloader/Recovery/Sideload, screenshot |
+| **Apps** | List / backup APK / install / uninstall / disable / re-enable packages (system badge + disabled badge) |
+| **Shell** | Sync shell commands, **live Logcat** stream, screenshot |
 | **Files** | Browse device storage, push / pull |
-| **Fastboot** | Reboot modes, flashing helpers (advanced) |
-| **License** | HWID-bound offline + online license checks |
+| **Fastboot** | Device list, reboot system/bootloader (flashing helpers later) |
+| **License** | HWID-bound offline license (`license.bin` activation) |
 | **Payments** | Bakong KHQR checkout (`bakong-khqr`, MIT) |
-| **Updates** | GitHub Releases auto-update |
+| **Updates** | GitHub Releases auto-update check |
 | **i18n** | English + Khmer |
+
+Built for **phone repair benches**: one installer, adb bundled, bloatware disable/enable,
+APK backup before uninstall, recovery/sideload reboot without memorizing commands.
 
 ## Why better than legacy tools
 

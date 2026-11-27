@@ -14,7 +14,9 @@ from PySide6.QtCore import (
     Property,
     QObject,
     QRunnable,
+    QThread,
     QThreadPool,
+    QUrl,
     Signal,
     Slot,
 )
@@ -24,8 +26,16 @@ from droidkit.core.apps import AppService
 from droidkit.core.device import DeviceService
 from droidkit.core.fastboot import Fastboot, FastbootError
 from droidkit.core.files import FileService
+from droidkit.core.logcat import LogcatStream
 from droidkit.core.screenshot import ScreenshotService
 from droidkit.core.tools import ToolNotFoundError
+
+
+def _to_local_path(path: str) -> str:
+    """Convert a QML file:// URL (or plain path) to a local filesystem path."""
+    if path.startswith("file:"):
+        return QUrl(path).toLocalFile() or path
+    return path
 
 
 class _Job(QRunnable):
@@ -49,6 +59,38 @@ class _Job(QRunnable):
             self.signals.failed.emit(f"Unexpected error: {exc}")
             return
         self.signals.done.emit(result)
+
+
+class _LogcatThread(QThread):
+    """Streams adb logcat lines to the UI until stopped."""
+
+    line = Signal(str)
+
+    def __init__(self, serial: str, parent: QObject | None = None) -> None:
+        super().__init__(parent)
+        self._serial = serial
+        self._stream: LogcatStream | None = None
+        self._stopping = False
+
+    def run(self) -> None:
+        try:
+            self._stream = LogcatStream(self._serial)
+            self._stream.start()
+            for text in self._stream.lines():
+                if self._stopping:
+                    break
+                self.line.emit(text)
+        except (OSError, RuntimeError) as exc:
+            self.line.emit(f"[logcat error] {exc}")
+        finally:
+            if self._stream:
+                self._stream.stop()
+                self._stream = None
+
+    def stop(self) -> None:
+        self._stopping = True
+        if self._stream:
+            self._stream.stop()  # closes stdout → iterator ends
 
 
 class DeviceBridge(QObject):
@@ -82,6 +124,7 @@ class DeviceBridge(QObject):
         self._cwd = "/sdcard"
         self._fb_devices: list[str] = []
         self._devices: list[dict[str, str]] = []
+        self._logcat: _LogcatThread | None = None
 
     # --- lazy tool accessors ---------------------------------------
 
@@ -201,6 +244,7 @@ class DeviceBridge(QObject):
                 self.refreshInfo()
                 self.refreshApps()
             elif not online:
+                self.stopLogcat()
                 self._serial = ""
                 self._info = {}
                 self._apps = []
@@ -228,6 +272,8 @@ class DeviceBridge(QObject):
 
     @Slot(str)
     def selectDevice(self, serial: str) -> None:
+        if serial != self._serial:
+            self.stopLogcat()
         self._serial = serial
         self.infoChanged.emit()
         self.refreshInfo()
@@ -242,7 +288,15 @@ class DeviceBridge(QObject):
 
         def work() -> list[dict[str, str]]:
             entries = self.app_svc.list_packages(serial, third_party_only=False)
-            return [{"package": e.package, "system": str(e.system)} for e in entries]
+            disabled = self.app_svc.disabled_packages(serial)
+            return [
+                {
+                    "package": e.package,
+                    "system": str(e.system),
+                    "disabled": str(e.package in disabled),
+                }
+                for e in entries
+            ]
 
         def ok(apps: object) -> None:
             self._apps = apps or []  # type: ignore[assignment]
@@ -316,9 +370,10 @@ class DeviceBridge(QObject):
         if not self._serial:
             return
         serial = self._serial
+        src = Path(_to_local_path(local_path))
 
         def work() -> None:
-            self.file_svc.push(serial, Path(local_path), remote_dir)
+            self.file_svc.push(serial, src, remote_dir)
 
         def ok(_: object) -> None:
             self.refreshFiles(remote_dir)
@@ -380,3 +435,126 @@ class DeviceBridge(QObject):
         except (AdbError, RuntimeError, OSError) as exc:
             self._set_error(str(exc))
             return ""
+
+    # --- repair-bench operations -----------------------------------
+
+    @Slot(str)
+    def reboot(self, mode: str) -> None:
+        """mode: '' | bootloader | recovery | sideload | fastboot."""
+        if not self._serial:
+            self._set_error("No device")
+            return
+        serial = self._serial
+
+        def work() -> str:
+            res = self.adb.reboot(mode, serial=serial)
+            return res.stdout or res.stderr
+
+        def ok(_: object) -> None:
+            self._set_error(f"Rebooting to {mode or 'system'}…")
+            self._serial = ""
+            self._info = {}
+            self._apps = []
+            self.infoChanged.emit()
+            self.appsChanged.emit()
+
+        self._submit(work, ok)
+
+    @Slot(str)
+    def backupApp(self, package: str) -> None:
+        """Pull the app's APK to ~/Downloads/DroidKit/<package>.apk."""
+        if not self._serial:
+            return
+        serial = self._serial
+        dest_dir = Path.home() / "Downloads" / "DroidKit"
+
+        def work() -> str:
+            path = self.app_svc.backup_apk(serial, package, dest_dir)
+            if not path:
+                raise RuntimeError(f"APK path not found for {package}")
+            return str(path)
+
+        def ok(path: object) -> None:
+            self._set_error(f"Backed up → {path}")
+
+        self._submit(work, ok)
+
+    @Slot(str)
+    def installApk(self, local_path: str) -> None:
+        if not self._serial:
+            self._set_error("No device")
+            return
+        serial = self._serial
+        apk = Path(_to_local_path(local_path))
+
+        def work() -> bool:
+            if not apk.is_file():
+                raise RuntimeError(f"File not found: {apk}")
+            return self.app_svc.install(serial, apk)
+
+        def ok(success: object) -> None:
+            if success:
+                self._set_error(f"Installed {apk.name}")
+                self.refreshApps()
+            else:
+                self._set_error(f"Install failed: {apk.name}")
+
+        self._submit(work, ok)
+
+    @Slot(str)
+    def disableApp(self, package: str) -> None:
+        self._set_package_flag(package, disable=True)
+
+    @Slot(str)
+    def enableApp(self, package: str) -> None:
+        self._set_package_flag(package, disable=False)
+
+    def _set_package_flag(self, package: str, *, disable: bool) -> None:
+        if not self._serial:
+            return
+        serial = self._serial
+
+        def work() -> bool:
+            if disable:
+                return self.app_svc.disable(serial, package)
+            return self.app_svc.enable(serial, package)
+
+        def ok(success: object) -> None:
+            verb = "Disabled" if disable else "Enabled"
+            if success:
+                self._set_error(f"{verb} {package}")
+                self.refreshApps()
+            else:
+                self._set_error(f"{verb} failed: {package}")
+
+        self._submit(work, ok)
+
+    # --- live logcat ------------------------------------------------
+
+    @Property(bool, notify=busyChanged)
+    def logcatRunning(self) -> bool:
+        return self._logcat is not None
+
+    @Slot()
+    def startLogcat(self) -> None:
+        if self._logcat is not None or not self._serial:
+            return
+        self._logcat = _LogcatThread(self._serial, self)
+        self._logcat.line.connect(self.logLine)
+        self._logcat.finished.connect(self._on_logcat_finished)
+        self._logcat.start()
+        self.busyChanged.emit()
+
+    @Slot()
+    def stopLogcat(self) -> None:
+        if self._logcat is None:
+            return
+        self._logcat.stop()
+        self._logcat = None
+        self.busyChanged.emit()
+
+    def _on_logcat_finished(self) -> None:
+        if self._logcat is not None:
+            self._logcat.deleteLater()
+            self._logcat = None
+            self.busyChanged.emit()

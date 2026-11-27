@@ -29,7 +29,35 @@ class AppService:
                 pkg = line.removeprefix("package:").strip()
                 if pkg:
                     out.append(AppEntry(package=pkg))
+        if not third_party_only:
+            system = self._system_packages(serial)
+            out = [
+                AppEntry(package=e.package, path=e.path, system=e.package in system) for e in out
+            ]
         return sorted(out, key=lambda a: a.package)
+
+    def _system_packages(self, serial: str) -> set[str]:
+        res = self._adb.shell("pm list packages -s", serial=serial)
+        out: set[str] = set()
+        for line in res.stdout.splitlines():
+            line = line.strip()
+            if line.startswith("package:"):
+                pkg = line.removeprefix("package:").strip()
+                if pkg:
+                    out.add(pkg)
+        return out
+
+    def disabled_packages(self, serial: str) -> set[str]:
+        """Packages disabled via `pm disable-user` (bloatware the bench turned off)."""
+        res = self._adb.shell("pm list packages -d", serial=serial)
+        out: set[str] = set()
+        for line in res.stdout.splitlines():
+            line = line.strip()
+            if line.startswith("package:"):
+                pkg = line.removeprefix("package:").strip()
+                if pkg:
+                    out.add(pkg)
+        return out
 
     def apk_path(self, serial: str, package: str) -> str | None:
         res = self._adb.shell(f"pm path {package}", serial=serial)

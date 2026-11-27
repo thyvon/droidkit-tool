@@ -32,7 +32,9 @@ Item {
         InfoCard {
             label: Translator.tr("label.battery")
             value: DeviceBridge.info.battery_level ? DeviceBridge.info.battery_level + "%" : "—"
-            hint: DeviceBridge.info.battery_status || ""
+            hint: [DeviceBridge.info.battery_status,
+                   DeviceBridge.info.battery_health,
+                   DeviceBridge.info.battery_temp].filter(function (s) { return s }).join(" · ")
         }
         InfoCard {
             label: Translator.tr("label.storage")
@@ -76,6 +78,38 @@ Item {
                         text: Translator.tr("action.screenshot")
                         enabled: DeviceBridge.serial.length > 0 && !DeviceBridge.busy
                         onClicked: DeviceBridge.screenshot()
+                    }
+                }
+
+                // Reboot modes — the bread-and-butter of a repair bench
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 8
+                    visible: DeviceBridge.serial.length > 0
+                    Label {
+                        text: Translator.tr("action.reboot") + ":"
+                        color: "#94a3b8"
+                        font.pixelSize: 12
+                    }
+                    Button {
+                        text: Translator.tr("action.reboot_system")
+                        enabled: !DeviceBridge.busy
+                        onClicked: DeviceBridge.reboot("")
+                    }
+                    Button {
+                        text: Translator.tr("action.reboot_bootloader")
+                        enabled: !DeviceBridge.busy
+                        onClicked: DeviceBridge.reboot("bootloader")
+                    }
+                    Button {
+                        text: Translator.tr("action.reboot_recovery")
+                        enabled: !DeviceBridge.busy
+                        onClicked: DeviceBridge.reboot("recovery")
+                    }
+                    Button {
+                        text: Translator.tr("action.reboot_sideload")
+                        enabled: !DeviceBridge.busy
+                        onClicked: DeviceBridge.reboot("sideload")
                     }
                 }
 

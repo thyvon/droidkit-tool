@@ -18,6 +18,9 @@ class DeviceInfo:
     sdk: str = ""
     battery_level: str = ""
     battery_status: str = ""
+    battery_health: str = ""
+    battery_temp: str = ""
+    battery_voltage: str = ""
     total_storage: str = ""
     free_storage: str = ""
     screen: str = ""
@@ -25,6 +28,27 @@ class DeviceInfo:
 
     def to_dict(self) -> dict[str, str]:
         return {k: str(v) for k, v in asdict(self).items()}
+
+
+#: dumpsys battery `health:` codes → human text (repairers read this daily).
+_BATTERY_HEALTH = {
+    "1": "Unknown",
+    "2": "Good",
+    "3": "Overheat",
+    "4": "Dead",
+    "5": "Over voltage",
+    "6": "Cold",
+    "7": "Watchdog timer",
+    "8": "Safety timer",
+}
+
+_BATTERY_STATUS = {
+    "1": "Unknown",
+    "2": "Charging",
+    "3": "Discharging",
+    "4": "Not charging",
+    "5": "Full",
+}
 
 
 class DeviceService:
@@ -46,7 +70,7 @@ class DeviceService:
         while len(props) < 6:
             props.append("")
         battery = adb.shell("dumpsys battery", serial=serial).stdout
-        level, status = _parse_battery(battery)
+        level, status, health, temp_c, voltage = _parse_battery(battery)
         df = adb.shell("df /data | tail -1", serial=serial).stdout.split()
         total = df[1] if len(df) > 1 else ""
         free = df[3] if len(df) > 3 else ""
@@ -62,6 +86,9 @@ class DeviceService:
             sdk=props[4].strip(),
             battery_level=level,
             battery_status=status,
+            battery_health=health,
+            battery_temp=temp_c,
+            battery_voltage=voltage,
             total_storage=total,
             free_storage=free,
             screen=size.replace("Physical size: ", ""),
@@ -69,12 +96,25 @@ class DeviceService:
         )
 
 
-def _parse_battery(dumpsys: str) -> tuple[str, str]:
-    level, status = "", ""
+def _parse_battery(dumpsys: str) -> tuple[str, str, str, str, str]:
+    """Return (level, status, health, temp_c, voltage_mv)."""
+    level = status = health = temp_c = voltage = ""
     for line in dumpsys.splitlines():
         line = line.strip()
         if line.startswith("level:"):
             level = line.split(":", 1)[1].strip()
         elif line.startswith("status:"):
-            status = line.split(":", 1)[1].strip()
-    return level, status
+            code = line.split(":", 1)[1].strip()
+            status = _BATTERY_STATUS.get(code, code)
+        elif line.startswith("health:"):
+            code = line.split(":", 1)[1].strip()
+            health = _BATTERY_HEALTH.get(code, code)
+        elif line.startswith("temperature:"):
+            raw = line.split(":", 1)[1].strip()
+            if raw.isdigit():
+                temp_c = f"{int(raw) / 10:.1f} °C"
+        elif line.startswith("voltage:"):
+            raw = line.split(":", 1)[1].strip()
+            if raw.isdigit():
+                voltage = f"{int(raw)} mV"
+    return level, status, health, temp_c, voltage
